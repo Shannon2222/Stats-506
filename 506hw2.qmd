@@ -1,0 +1,321 @@
+---
+title: "506_hw2"
+format: html
+editor: visual
+---
+
+## Problem 1
+
+a\. Version 1
+
+```{r}
+#' @param n Number of steps.
+#' @return Final position after n steps.
+random_walk1 <- function(n) {
+  p <- 0
+  for (i in 1:n) {
+    s <- sample(c(-1, 1), 1)  
+    if (s == 1) {
+      if (runif(1) < 0.05) {
+        s <- 10}} 
+    else {
+      if (runif(1) < 0.20) {
+        s <- -3}}
+    p <- p + s}
+  return(p)
+}
+
+```
+
+a\. Version 2
+
+```{r}
+#' @param n Number of steps.
+#' @return Final position after n steps.
+random_walk2 <- function(n) {
+  s <- sample(c(-1, 1), n, replace = TRUE)
+  pm <- (s == 1) & (runif(n) < 0.05)
+  s[pm] <- 10
+  mm <- (s == -1) & (runif(n) < 0.20)
+  s[mm] <- -3
+  return(sum(s))
+}
+
+```
+
+a\. Version 3
+
+```{r}
+#' @param n Number of steps.
+#' @return Final position after n steps.
+random_walk3 <- function(n) {
+  st <- replicate(n, {
+    s <- sample(c(-1, 1), 1)
+    if (s == 1) {
+      if (runif(1) < 0.05) s <- 10} 
+    else {
+      if (runif(1) < 0.20) s <- -3}
+    s})
+  return(sum(st))
+}
+
+```
+
+Demonstration 
+
+```{r}
+set.seed(5) 
+cat("After 10 steps:\n")
+print(random_walk1(10))
+print(random_walk2(10))
+print(random_walk3(10))
+cat("\nAfter 1000 steps:\n")
+print(random_walk1(1000))
+print(random_walk2(1000))
+print(random_walk3(1000))
+```
+
+b
+
+```{r}
+stream <- function(n, seed) {
+  set.seed(seed)
+  d <- sample(c(-1, 1), n, replace = TRUE)   
+  pr <- runif(n)                             
+  list(d = d, pr = pr)
+}
+random_walk1 <- function(d, pr) {
+  p <- 0
+  for (i in seq_along(d)) {
+    s <- d[i]
+    if (s ==  1 && pr[i] < 0.05) s <- 10
+    if (s == -1 && pr[i] < 0.20) s <- -3
+    p <- p + s}
+  p}
+random_walk2 <- function(d, pr) {
+  s <- d
+  s[d ==  1 & pr < 0.05] <- 10
+  s[d == -1 & pr < 0.20] <- -3
+  sum(s)
+}
+random_walk3 <- function(d, pr) {
+  s <- mapply(function(d, p) {
+    if (d ==  1 && p < 0.05) return(10)
+    if (d == -1 && p < 0.20) return(-3)
+    d}, d, pr)
+  sum(s)
+}
+```
+
+Demonstration
+
+```{r}
+st <- stream(10, seed=25)
+cat("For n=10:\n")
+print(random_walk1(st$d, st$pr))
+print(random_walk2(st$d, st$pr))
+print(random_walk3(st$d, st$pr))
+st <- stream(1000, seed=25)
+cat("\nFor n=1000:\n")
+print(random_walk1(st$d, st$pr))
+print(random_walk2(st$d, st$pr))
+print(random_walk3(st$d, st$pr))
+```
+
+c
+
+```{r}
+library(microbenchmark)
+ben <- function(n, seed = 5, ts = 40, tl = 8) {
+  st <- stream(n, seed)
+  reps <- if (n < 5000) ts else tl  
+  mb <- microbenchmark(
+    version1 = random_walk1(st$d, st$pr),
+    version2 = random_walk2(st$d, st$pr),
+    version3 = random_walk3(st$d, st$pr),
+    times = reps,
+    unit  = "ms")
+  print(mb)
+  sm <- summary(mb)
+  out <- sm[, c("expr", "min", "lq", "median", "uq", "max")]
+  rownames(out) <- NULL
+  out
+}
+
+tbs <- ben(1000, seed = 5)
+tbl <- ben(100000, seed = 5)
+tbs$n <- 1000
+tbl$n <- 100000
+co <- rbind(tbs, tbl)
+names(co)[1] <- "implementation"
+co <- co[, c("n", "implementation", "median", "lq", "uq", "min", "max")]
+print(co)
+
+```
+
+Version 2 which uses the vectorized functions is the fastest in all ways. Version 3 is the slowest. Compared to the size of n = 1000, when scaling up to n = 100,000, the differences became more huge. Method of version 2 should be preferred for performance.
+
+d
+
+```{r}
+mc <- function(n, t, batch = 1e5, seed = 5) {
+  set.seed(seed)
+  hits <- 0L
+  dn <- 0L
+  while (dn < t) {
+    b <- min(batch, t - dn)
+    d <- matrix(sample(c(-1L, 1L), b * n, replace = TRUE), nrow = b)
+    u <- matrix(runif(b * n), nrow = b)
+    s <- d
+    s[d ==  1L & u < 0.05] <- 10L   
+    s[d == -1L & u < 0.20] <- -3L  
+    totals <- rowSums(s)
+    hits <- hits + sum(totals == 0L)
+    dn <- dn + b}
+  p <- hits / t
+  se <- sqrt(p * (1 - p) / t)
+  ci <- c(p - 1.96 * se, p + 1.96 * se)
+  list(p_hat = p, ci = ci, hits = hits, t = t)
+}
+```
+
+```{r}
+res10   <- mc(n = 10,   t = 2e6,   batch = 1e5, seed = 8)
+res100  <- mc(n = 100,  t = 1e6,   batch = 1e5, seed = 8)
+res1000 <- mc(n = 1000, t = 2e5,   batch = 2e4, seed = 8)
+print(res10)
+print(res100)
+print(res1000)
+
+```
+
+For n = 10, the probability that the random walk ends at 0 is about 0.1321. For n = 100, the probability is about 0.0196. For n = 1000, the probability is about 0.0055.
+
+## Problem 2
+
+```{r}
+set.seed(5)
+N <- 100000  
+X <- cbind(
+  matrix(rpois(N * 8, 1), N, 8),                                  
+  pmax(0, round(matrix(rnorm(N, 60, sqrt(12)), N, 1))),            
+  matrix(rpois(N * 8, 8), N, 8),                                  
+  pmax(0, round(matrix(rnorm(N, 60, sqrt(12)), N, 1))),           
+  matrix(rpois(N * 6, 12), N, 6))
+t <- rowSums(X)                
+mc_mean <- mean(t)             
+mc_se <- sd(t) / sqrt(N)     
+ci <- mc_mean + c(-1, 1) * 1.96 * mc_se   
+mc_mean
+ci
+
+```
+
+So the average number of cars that pass an intersection per day under these assumptions is 264.
+
+## Problem 3
+
+a
+
+```{r}
+youtube <- read.csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-03-02/youtube.csv')
+names(youtube)
+```
+
+```{r}
+yc <- subset(youtube, 
+        select = -c(brand, superbowl_ads_dot_com_url, youtube_url, id, kind, etag))
+dim(yc)
+
+```
+
+b
+
+```{r}
+yc$log_view    <- log1p(yc$view_count)
+yc$log_like    <- log1p(yc$like_count)
+yc$log_dislike <- log1p(yc$dislike_count)
+yc$log_comment <- log1p(yc$comment_count)
+
+# Favorite count
+table(yc$favorite_count)
+
+par(mfrow=c(1,2))
+# View counts
+hist(yc$view_count, main="View Count", xlab="Views", col="lightblue")
+hist(yc$log_view, main="View Count (log1p)", xlab="log(Views+1)", col="pink")
+
+# Like counts
+hist(yc$like_count, main="Like Count", xlab="Likes", col="lightblue")
+hist(yc$log_like, main="Like Count (log1p)", xlab="log(Likes+1)", col="pink")
+
+# Dislike counts
+hist(yc$dislike_count, main="Dislike Count", xlab="Dislikes", col="lightblue")
+hist(yc$log_dislike, main="Dislike Count (log1p)", xlab="log(Dislikes+1)", col="pink")
+
+# Comment counts
+hist(yc$comment_count, main="Comment Count", xlab="Comments", col="lightblue")
+hist(yc$log_comment, main="Comment Count (log1p)", xlab="log(Comments+1)", col="pink")
+
+```
+
+-   View counts. ii) The variable can use a transformation prior to being used as the outcome in a linear regression model.
+
+-   Like counts.  ii) The variable can use a transformation prior to being used as the outcome in a linear regression model.
+
+-   Dislike counts. ii) The variable can use a transformation prior to being used as the outcome in a linear regression model.
+
+-   Favorite counts. iii) The variable would not be appropriate to use as the outcome in a linear regression model.
+
+-   Comment counts. ii) The variable can use a transformation prior to being used as the outcome in a linear regression model.
+
+c
+
+```{r}
+library(broom)    
+library(dplyr)    
+library(knitr)      
+rview    <- lm(log_view    ~ funny + show_product_quickly + patriotic +
+                  celebrity + danger + animals + use_sex + year, data = yc)
+rlike    <- lm(log_like    ~ funny + show_product_quickly + patriotic +
+                  celebrity + danger + animals + use_sex + year, data = yc)
+rdislike <- lm(log_dislike ~ funny + show_product_quickly + patriotic +
+                  celebrity + danger + animals + use_sex + year, data = yc)
+rcomment <- lm(log_comment ~ funny + show_product_quickly + patriotic +
+                  celebrity + danger + animals + use_sex + year, data = yc)
+results <- list(
+  View    = rview,
+  Like    = rlike,
+  Dislike = rdislike,
+  Comment = rcomment) %>%
+  lapply(tidy) %>%
+  bind_rows(.id = "Outcome") %>%
+  filter(term != "(Intercept)") %>%
+  mutate(significant = ifelse(p.value < 0.05, "Yes", ""))
+
+kable(results[, c("Outcome", "term", "estimate", "std.error", "p.value", "significant")],
+      digits = 3, caption = "Linear regression")
+
+
+```
+
+It shows that year is a statistically significant positive predictor for likes and dislikes. And none of the characteristics such as funny, celebrity and animals showed robust significant effects.
+
+d
+
+```{r}
+form <- log_view ~ funny + show_product_quickly + patriotic + celebrity + danger + animals + use_sex + year
+mf <- model.frame(form, data = yc, na.action = na.omit)
+X <- model.matrix(form, data = mf)    
+y <- model.response(mf)
+beta_hat_m <- qr.solve(X, y)
+
+fit_lm <- lm(form, data = yc)       
+beta_lm <- coef(fit_lm)
+
+cat("Manual beta hat:\n"); print(beta_hat_m)
+cat("\nlm coefficients:\n"); print(beta_lm)
+cat("\nEqual? ", all.equal(as.numeric(beta_hat_m), as.numeric(beta_lm), tolerance = 1e-10), "\n", sep = "")
+
+
+```
