@@ -1,0 +1,234 @@
+---
+title: "hw4"
+format: html
+editor: visual
+---
+
+## Problem 1
+
+a\.
+
+```{r}
+library(nzelect)
+library(tidyverse)
+votea <- nzge %>%
+  group_by(election_year, voting_type) %>%
+  summarise(count = sum(votes, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(count))
+votea
+
+```
+
+b\.
+
+```{r}
+election2014 <- nzge %>%
+  filter(election_year == 2014, voting_type == "Candidate") %>%
+  group_by(party) %>%
+  summarise(votes = sum(votes, na.rm = TRUE), .groups = "drop") %>%
+  mutate(proportion = 100 * votes / sum(votes)) %>%
+  arrange(desc(proportion))
+election2014
+
+```
+
+c\.
+
+```{r}
+winnerc <- nzge %>%
+  group_by(election_year, voting_type, party) %>%
+  summarise(t = sum(votes, na.rm = TRUE), .groups = "drop") %>%
+  group_by(election_year, voting_type) %>%
+  slice_max(order_by = t, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(year = election_year,
+         type = voting_type,
+         winner = party,
+         votes = t) %>%
+  arrange(year, type)
+winnerc
+
+```
+
+## Problem 2
+
+a\.
+
+```{r}
+library(tidyverse)
+m <- read_csv(
+  "https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_2019.csv",
+  show_col_types = FALSE)
+t2019 <- m %>%
+  filter(str_starts(tourney_id, "2019-")) %>%
+  group_by(tourney_id, tourney_name, tourney_level, surface) %>%
+  summarise(start_date = min(tourney_date, na.rm = TRUE), .groups = "drop") %>%
+  arrange(start_date, tourney_id)
+t2019
+
+```
+
+```{r}
+c <- t2019 %>%
+  summarise(num_tournaments = n())
+c
+```
+
+b\.
+
+12 players won more than one tournament. The most winning players won 5 tournaments.
+
+```{r}
+tw <- m %>%
+  filter(round == "F") %>%
+  distinct(tourney_id, winner_name)
+winnerc <- tw %>%
+  count(winner_name, name = "n")
+countb <- winnerc %>%
+  summarise(
+    win_more_than_one = sum(n > 1),
+    max_win = max(n, na.rm = TRUE))
+countb
+
+
+```
+
+c\.
+
+```{r}
+library(tidyverse)
+library(infer)   
+ace <- m %>%
+  select(w_ace, l_ace) %>%
+  pivot_longer(cols = everything(),
+               names_to = "ptype",
+               values_to = "aces") %>%
+  mutate(ptype = if_else(ptype == "w_ace", "Winner", "Loser"))
+atest <- ace %>%
+  t_test(aces ~ ptype, alternative = "greater")
+atest
+
+```
+
+As shown in the t-test above, the estimated difference in mean aces of winner and loser was -1.7, with a t-statistic of -10.69 and a p-value of 1. So winners don't have more aces than losers. And losers tend to have slightly more aces on average.
+
+d\.
+
+```{r}
+player_results <- m %>%
+  select(winner_name, loser_name) %>%
+  pivot_longer(cols = everything(),
+               names_to = "ty",
+               values_to = "player") %>%
+  mutate(win = if_else(ty == "winner_name", 1, 0))
+wrate <- player_results %>%
+  group_by(player) %>%
+  summarise(
+    matches = n(),
+    wins = sum(win),
+    wrate = wins / matches) %>%
+  filter(matches >= 5) %>%      # 至少 5 场比赛
+  arrange(desc(wrate))
+topwin <- wrate %>%
+  filter(wrate == max(wrate))
+topwin
+
+```
+
+## Problem 3
+
+a\.
+
+```{r}
+library(tidyverse)
+library(lubridate)
+covid <- read_csv(
+  "https://raw.githubusercontent.com/nytimes/covid-19-data/refs/heads/master/rolling-averages/us-states.csv", show_col_types = FALSE)
+da <- covid %>%
+  group_by(date) %>%
+  summarise(cavg = sum(cases_avg, na.rm = TRUE)) %>%
+  arrange(date)
+da <- da %>%
+  mutate(
+    lag7 = lag(cavg, 7),
+    lead7 = lead(cavg, 7),
+    lpeak = cavg > lag7 & cavg > lead7 )
+avg <- mean(da$cavg, na.rm = TRUE)
+spikes <- da %>%
+  mutate(
+    stype = case_when(
+      cavg > 2 * avg  ~ "Major spike",
+      cavg > 1.4 * avg ~ "Minor spike",
+      TRUE ~ NA_character_)) %>%
+  filter(!is.na(stype) & lpeak)
+spikes %>%
+  count(stype)
+ggplot(da, aes(x = date, y = cavg)) +
+  geom_line( linewidth = 0.4) +
+  geom_point(
+    data = spikes,
+    aes(color = stype),
+    size = 2 ) +
+  scale_color_manual(values = c("Major spike" = "blue", "Minor spike" = "red")) +
+  labs(
+    title = "NY Times Daily Covid New Cases ",
+    x = "Date",
+    y = "New Cases",
+    color = "Spike Type" ) +
+  theme_minimal(base_size = 10)
+
+```
+
+There appear to be about 7 major spikes and 5 minor spikes.
+
+b\.
+
+```{r}
+savg <- covid %>%
+  group_by(state) %>%
+  summarise(mean_per100k = mean(cases_avg_per_100k, na.rm = TRUE)) %>%
+  arrange(desc(mean_per100k))
+hs <- savg$state[1]
+ls <- savg$state[nrow(savg)]
+comp <- covid %>%
+  filter(state %in% c(hs, ls)) %>%
+  select(date, state, cases_avg_per_100k)
+ggplot(comp, aes(x = date, y = cases_avg_per_100k, color = state)) +
+  geom_line(linewidth = 1) +
+  labs(
+    title = "COVID Case of the States with the Highest and Lowest Overall Rates per Population",
+    subtitle = paste0("Highest: ", hs, ",   Lowest: ", ls),
+    x = "Date",
+    y = "New Cases per 100k",
+    color = "State") +
+  theme_minimal(base_size = 10)
+
+```
+
+> The highest state American Samoa has a delayed outbreak in the middle of 2022. And it has several smaller outbreak after that too. The lowest state Maryland has an early outbreak in the beginning of 2022. And the peak of American Samoa's outbreak is much higher than the one of Maryland.
+
+c\.
+
+```{r}
+firsts <- covid %>%
+  filter(cases_avg > 80) %>%                
+  group_by(state) %>%
+  summarise(first_states = min(date, na.rm = TRUE)) %>%
+  arrange(first_states)
+head(firsts, 5)
+```
+
+Here I define a outbreak as when a state’s 7 days average of new cases exceeded 80.
+
+```{r}
+st <- c("New York","Washington", "California", "New Jersey", "Florida")
+covid %>%
+  filter(state %in% st) %>%
+  ggplot(aes(x = date, y = cases_avg, color = state)) +
+  geom_line(size = 1) +
+  labs( title = "The First Five States to Experience Covid",
+    y = "New Cases of 7 days average)",
+    x = "Date" ) +
+  theme_minimal(base_size = 10)
+
+```
